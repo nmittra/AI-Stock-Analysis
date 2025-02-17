@@ -13,28 +13,53 @@ from datetime import datetime, timedelta
 st.set_page_config(layout="wide")
 st.title("AI-Powered Technical Stock Analysis Dashboard")
 
-# Configure the API key - Try multiple sources with fallbacks
-if 'DEEPSEEK_API_KEY' not in st.session_state:
+
+# Configure the API key with better user experience
+def initialize_api_key():
+    # Try to get key from multiple sources
+    api_key = None
+
     # Method 1: Check Streamlit secrets
     try:
-        st.session_state.DEEPSEEK_API_KEY = st.secrets["DEEPSEEK_API_KEY"]
+        api_key = st.secrets.get("DEEPSEEK_API_KEY")
     except (KeyError, AttributeError):
-        # Method 2: Environment variable
-        st.session_state.DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY", "")
+        pass
 
-    # Method 3: Manual input if not found
-    if not st.session_state.DEEPSEEK_API_KEY:
-        st.warning("⚠️ Deepseek API key not found in secrets or environment variables.")
-        st.session_state.DEEPSEEK_API_KEY = st.text_input(
-            "Enter your Deepseek API key:",
-            type="password",
-            help="Your API key will be stored in this session only and not saved permanently."
-        )
+    # Method 2: Environment variable
+    if not api_key:
+        api_key = os.environ.get("DEEPSEEK_API_KEY", "")
 
-# Check if API key is available
-api_key_available = bool(st.session_state.get("DEEPSEEK_API_KEY"))
+    # Method 3: Session state (for persistence)
+    if not api_key and "DEEPSEEK_API_KEY" in st.session_state:
+        api_key = st.session_state.DEEPSEEK_API_KEY
+
+    return api_key
+
+
+# Get API key
+api_key = initialize_api_key()
+
+# API key input widget if needed
+if not api_key:
+    st.warning("⚠️ Deepseek API key not found in secrets or environment variables.")
+    api_key_input = st.text_input(
+        "Enter your Deepseek API key:",
+        type="password",
+        help="Your API key will be stored in this session only and not saved permanently."
+    )
+
+    if api_key_input:
+        # Save entered key and use it
+        st.session_state.DEEPSEEK_API_KEY = api_key_input
+        api_key = api_key_input
+        st.success("API key saved for this session. You can now proceed with analysis.")
+        st.experimental_rerun()  # Force a rerun to refresh with the new API key
+
+# Verify we have an API key before proceeding
+api_key_available = bool(api_key)
 if not api_key_available:
     st.error("Please provide a valid Deepseek API key to continue.")
+    st.stop()  # Stop execution if no API key
 
 # Sidebar UI
 st.sidebar.header("Configuration")
@@ -61,14 +86,11 @@ indicators = st.sidebar.multiselect(
 
 # Function to call Deepseek R1 API
 def call_deepseek_r1(prompt, image_base64):
-    if not st.session_state.get("DEEPSEEK_API_KEY"):
-        return {"action": "Error", "justification": "No API key provided. Please enter your Deepseek API key."}
-
     api_url = "https://api.deepseek.com/v1/chat/completions"
 
     headers = {
         "Content-Type": "application/json",
-        "Authorization": f"Bearer {st.session_state.DEEPSEEK_API_KEY}"
+        "Authorization": f"Bearer {api_key}"
     }
 
     # Prepare the messages with image
@@ -98,17 +120,31 @@ def call_deepseek_r1(prompt, image_base64):
     try:
         with st.spinner("Analyzing chart with Deepseek R1..."):
             response = requests.post(api_url, json=payload, headers=headers)
-            response.raise_for_status()
+
+            # Detailed error handling
+            if response.status_code != 200:
+                error_message = f"API Error (Status: {response.status_code})"
+                try:
+                    error_json = response.json()
+                    if 'error' in error_json:
+                        error_message += f": {error_json['error'].get('message', '')}"
+                except:
+                    error_message += f": {response.text[:200]}"
+
+                if response.status_code == 401:
+                    # Reset API key on authentication failure
+                    st.session_state.pop("DEEPSEEK_API_KEY", None)
+                    error_message = "Invalid API key. Please re-enter your Deepseek API key."
+                    st.error(error_message)
+                    st.experimental_rerun()
+
+                return {"action": "Error", "justification": error_message}
+
             result = response.json()
             response_content = result["choices"][0]["message"]["content"]
             return json.loads(response_content)
     except requests.exceptions.RequestException as e:
-        error_detail = str(e)
-        if response.status_code == 401:
-            error_detail = "Invalid API key or authorization failed. Please check your Deepseek API key."
-        elif response.status_code == 429:
-            error_detail = "API rate limit exceeded. Please try again later."
-        return {"action": "Error", "justification": f"API request error: {error_detail}"}
+        return {"action": "Error", "justification": f"API request error: {str(e)}"}
     except json.JSONDecodeError as e:
         return {"action": "Error",
                 "justification": f"JSON parsing error: {str(e)}. Raw response: {response.text[:500]}"}
@@ -134,7 +170,7 @@ if st.sidebar.button("Fetch Data") and tickers:
         st.error("No valid stock data found for any of the provided tickers.")
 
 # Ensure we have data to analyze
-if "stock_data" in st.session_state and st.session_state["stock_data"] and api_key_available:
+if "stock_data" in st.session_state and st.session_state["stock_data"]:
 
     # Define a function to build chart, call the Deepseek API and return structured result
     def analyze_ticker(ticker, data):
@@ -224,7 +260,5 @@ if "stock_data" in st.session_state and st.session_state["stock_data"] and api_k
         st.subheader("Overall Structured Recommendations")
         df_summary = pd.DataFrame(overall_results)
         st.table(df_summary)
-elif not api_key_available and "stock_data" in st.session_state:
-    st.warning("Please provide a Deepseek API key to analyze the loaded stock data.")
-elif not "stock_data" in st.session_state:
+else:
     st.info("Please fetch stock data using the sidebar.")
