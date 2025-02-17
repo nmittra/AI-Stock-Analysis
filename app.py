@@ -17,7 +17,7 @@ if not OPENROUTER_API_KEY:
     st.stop()
 
 # OpenRouter API Details
-OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
+OPENROUTER_API_URL = "https://openrouter.ai/api/v1/"
 MODEL_NAME = "deepseek-ai/deepseek-r1"
 
 # Set up Streamlit app
