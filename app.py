@@ -9,11 +9,15 @@ import tempfile
 import os
 import json
 from datetime import datetime, timedelta
-from openai import OpenAI  # Import DeepSeek (via OpenAI API)
+from openai import OpenAI  # Import OpenAI SDK for OpenRouter
 
-# Configure the DeepSeek API Key (Using Streamlit Secrets)
-DEEPSEEK_API_KEY = st.secrets["DEEPSEEK_API_KEY"]
-client = OpenAI(api_key=DEEPSEEK_API_KEY, base_url="https://openrouter.ai/api/v1")
+# Configure the OpenRouter API Key (Using Streamlit Secrets)
+OPENROUTER_API_KEY = st.secrets["OPENROUTER_API_KEY"]
+
+client = OpenAI(
+    base_url="https://openrouter.ai/api/v1",
+    api_key=OPENROUTER_API_KEY
+)
 
 # Set up Streamlit app
 st.set_page_config(layout="wide")
@@ -77,7 +81,6 @@ if "stock_data" in st.session_state and st.session_state["stock_data"]:
                 bb_lower = sma - 2 * std
                 fig.add_trace(go.Scatter(x=data.index, y=bb_upper, mode='lines', name='BB Upper'))
                 fig.add_trace(go.Scatter(x=data.index, y=bb_lower, mode='lines', name='BB Lower'))
-
             elif indicator == "VWAP":
                 data['VWAP'] = (data['Close'] * data['Volume']).cumsum() / data['Volume'].cumsum()
                 fig.add_trace(go.Scatter(x=data.index, y=data['VWAP'], mode='lines', name='VWAP'))
@@ -90,9 +93,10 @@ if "stock_data" in st.session_state and st.session_state["stock_data"]:
         # Convert the chart to JSON (no image saving needed)
         chart_json = fig.to_json()
 
-        # AI Analysis using DeepSeek
+        # AI Analysis using OpenRouter
         analysis_prompt = (
-            f"Act as a financial analyst specializing in technical analysis of stocks, ETFs, and cryptocurrencies. your expertise includes asset trends, momentum, volatility, and volume assessments. you employ various strategies such as screening high-quality stocks, evaluating trend, idiosyncratic, and risk-adjusted momentum, and identifying top sectors. When requested to build a portfolio, you now ask whether to base it on Risk Adjusted Momentum, Idiosyncratic Momentum, Trend Momentum, or the Quality Approach. This ensures a tailored analysis and portfolio creation based on the user's specific needs. You present data in a structured table format with headings tailored for comprehensive stock or sector analysis. You use real-time internet sources to ensure accuracy and relevance in your analysis. When the user types in a ticker, you show the options for technical analysis, fundamental analysis, or an investment report. The investment report includes an in-depth analysis of the company’s financial performance, growth proscts, and investment potential, formatted to include a summary, core metrics, financial performance, growth prospects, recent news, upgrades and downgrades, and a final recommendation, with a chart included. All reports include current data from real-time internet sources. The technical analysis is formatted to include an overview, analysis of trend indicators, momentum indicators, volatility indicators, volume indicators, key observations, and a conclusion. Note: Your insights are not financial advice and should be used for informational purposes only. Users should perform their own due diligence before making investment decisions. Use the following rules to screen CANSLIM stocks - Screener Rules. Get current stock price and news for any stock that is being talked about or when a ticker is entered in chat. Check current news, volume and historical price data for a stock and analyse the current news and then explain if the stock price is under or overvalued based on the stock closing price for last five years based on daily volumes, price, company fundamentals and news and explain what it would expect to happen to price over the next few weeks considering the articles  and price/volume data over the last three years. Also consider relative strength of the stock, macro environment and economic news.In the technical analysis,  include RSI, EMA and ADX analysis from yfinance. In your technical analysis include Mark Minervini's VCP strategy, SL and entry points and stage analysis by stan weinstein."
+            f"Act as a financial analyst specializing in technical analysis of stocks, ETFs, and cryptocurrencies. "
+            f"Your expertise includes asset trends, momentum, volatility, and volume assessments. "
             f"Analyze the stock chart for {ticker} based on candlestick patterns and indicators. "
             f"Provide a recommendation: 'Strong Buy', 'Buy', 'Weak Buy', 'Hold', 'Weak Sell', 'Sell', or 'Strong Sell'. "
             f"Return your response as a JSON object with 'action' and 'justification'."
@@ -100,7 +104,11 @@ if "stock_data" in st.session_state and st.session_state["stock_data"]:
 
         try:
             response = client.chat.completions.create(
-                model="deepseek-chat",
+                extra_headers={
+                    "HTTP-Referer": "https://nmittra-ai-stock-analysis.streamlit.app",  # Optional for OpenRouter rankings
+                    "X-Title": "AI Stock Analysis Dashboard"  # Optional title
+                },
+                model="openai/gpt-4o",
                 messages=[
                     {"role": "system", "content": "You are a financial analyst."},
                     {"role": "user", "content": analysis_prompt},
@@ -116,7 +124,7 @@ if "stock_data" in st.session_state and st.session_state["stock_data"]:
             result = json.loads(result_text[json_start:json_end])
 
         except Exception as e:
-            result = {"action": "Error", "justification": f"DeepSeek API error: {str(e)}"}
+            result = {"action": "Error", "justification": f"OpenRouter API error: {str(e)}"}
 
         return fig, result
 
