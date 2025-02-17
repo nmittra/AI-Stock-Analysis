@@ -40,20 +40,22 @@ def initialize_api_key():
 api_key = initialize_api_key()
 
 # API key input widget if needed
+api_key_submitted = False
 if not api_key:
     st.warning("⚠️ Deepseek API key not found in secrets or environment variables.")
-    api_key_input = st.text_input(
-        "Enter your Deepseek API key:",
-        type="password",
-        help="Your API key will be stored in this session only and not saved permanently."
-    )
-
-    if api_key_input:
-        # Save entered key and use it
-        st.session_state.DEEPSEEK_API_KEY = api_key_input
-        api_key = api_key_input
-        st.success("API key saved for this session. You can now proceed with analysis.")
-        st.experimental_rerun()  # Force a rerun to refresh with the new API key
+    with st.form(key="api_key_form"):
+        api_key_input = st.text_input(
+            "Enter your Deepseek API key:",
+            type="password",
+            help="Your API key will be stored in this session only and not saved permanently."
+        )
+        submit_button = st.form_submit_button(label="Save API Key")
+        if submit_button and api_key_input:
+            # Save entered key and use it
+            st.session_state.DEEPSEEK_API_KEY = api_key_input
+            api_key = api_key_input
+            api_key_submitted = True
+            st.success("API key saved for this session. You can now proceed with analysis.")
 
 # Verify we have an API key before proceeding
 api_key_available = bool(api_key)
@@ -133,10 +135,9 @@ def call_deepseek_r1(prompt, image_base64):
 
                 if response.status_code == 401:
                     # Reset API key on authentication failure
-                    st.session_state.pop("DEEPSEEK_API_KEY", None)
-                    error_message = "Invalid API key. Please re-enter your Deepseek API key."
-                    st.error(error_message)
-                    st.experimental_rerun()
+                    if "DEEPSEEK_API_KEY" in st.session_state:
+                        del st.session_state["DEEPSEEK_API_KEY"]
+                    error_message = "Invalid API key. Please reload the page and re-enter your Deepseek API key."
 
                 return {"action": "Error", "justification": error_message}
 
@@ -153,7 +154,8 @@ def call_deepseek_r1(prompt, image_base64):
 
 
 # Button to fetch data for all tickers
-if st.sidebar.button("Fetch Data") and tickers:
+fetch_data = st.sidebar.button("Fetch Data")
+if fetch_data and tickers:
     stock_data = {}
     with st.spinner("Fetching stock data..."):
         for ticker in tickers:
@@ -168,6 +170,10 @@ if st.sidebar.button("Fetch Data") and tickers:
         st.success("Stock data loaded successfully for: " + ", ".join(stock_data.keys()))
     else:
         st.error("No valid stock data found for any of the provided tickers.")
+
+# If API key was just submitted and we have stock data, automatically analyze
+if api_key_submitted and "stock_data" in st.session_state and st.session_state["stock_data"]:
+    st.info("API key saved. Starting analysis of loaded stock data...")
 
 # Ensure we have data to analyze
 if "stock_data" in st.session_state and st.session_state["stock_data"]:
@@ -242,23 +248,29 @@ if "stock_data" in st.session_state and st.session_state["stock_data"]:
     # List to store overall results
     overall_results = []
 
-    # Process each ticker and populate results
-    for i, ticker in enumerate(st.session_state["stock_data"]):
-        data = st.session_state["stock_data"][ticker]
-        # Analyze ticker: get chart figure and structured output result
-        fig, result = analyze_ticker(ticker, data)
-        overall_results.append({"Stock": ticker, "Recommendation": result.get("action", "N/A")})
-        # In each ticker-specific tab, display the chart and detailed justification
-        with tabs[i + 1]:
-            st.subheader(f"Analysis for {ticker}")
-            st.plotly_chart(fig)
-            st.write("**Detailed Justification:**")
-            st.write(result.get("justification", "No justification provided."))
+    # Add a "Run Analysis" button for explicit control
+    run_analysis = st.button("Run Analysis with Deepseek R1")
 
-    # In the Overall Summary tab, display a table of all results
-    with tabs[0]:
-        st.subheader("Overall Structured Recommendations")
-        df_summary = pd.DataFrame(overall_results)
-        st.table(df_summary)
+    if run_analysis or api_key_submitted:
+        # Process each ticker and populate results
+        for i, ticker in enumerate(st.session_state["stock_data"]):
+            data = st.session_state["stock_data"][ticker]
+            # Analyze ticker: get chart figure and structured output result
+            fig, result = analyze_ticker(ticker, data)
+            overall_results.append({"Stock": ticker, "Recommendation": result.get("action", "N/A")})
+            # In each ticker-specific tab, display the chart and detailed justification
+            with tabs[i + 1]:
+                st.subheader(f"Analysis for {ticker}")
+                st.plotly_chart(fig)
+                st.write("**Detailed Justification:**")
+                st.write(result.get("justification", "No justification provided."))
+
+        # In the Overall Summary tab, display a table of all results
+        with tabs[0]:
+            st.subheader("Overall Structured Recommendations")
+            df_summary = pd.DataFrame(overall_results)
+            st.table(df_summary)
+    else:
+        st.info("Click 'Run Analysis' to analyze your stock data with Deepseek R1.")
 else:
     st.info("Please fetch stock data using the sidebar.")
