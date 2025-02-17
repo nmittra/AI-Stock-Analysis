@@ -1,7 +1,11 @@
 print("Hello Papa!")
 
-# Libraries
+# Move `st.set_page_config()` to the top before any other Streamlit commands
 import streamlit as st
+
+st.set_page_config(layout="wide")  # ✅ This must be the first Streamlit command
+
+# Libraries
 import yfinance as yf
 import pandas as pd
 import plotly.graph_objects as go
@@ -25,7 +29,6 @@ client = OpenAI(
 )
 
 # Set up Streamlit app
-st.set_page_config(layout="wide")
 st.title("AI-Powered Technical Stock Analysis Dashboard")
 st.sidebar.header("Configuration")
 
