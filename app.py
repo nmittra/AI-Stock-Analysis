@@ -9,7 +9,14 @@ import os
 from datetime import datetime, timedelta
 
 # Load API key from Streamlit secrets
-OPENROUTER_API_KEY = st.secrets["OPENROUTER_API_KEY"]
+OPENROUTER_API_KEY = st.secrets.get("OPENROUTER_API_KEY")
+
+# Validate API key before proceeding
+if not OPENROUTER_API_KEY:
+    st.error("⚠️ OpenRouter API Key is missing! Please set it in Streamlit Secrets.")
+    st.stop()
+
+# OpenRouter API Details
 OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
 MODEL_NAME = "deepseek-ai/deepseek-r1"
 
@@ -88,14 +95,6 @@ if "stock_data" in st.session_state and st.session_state["stock_data"]:
             add_indicator(ind)
         fig.update_layout(xaxis_rangeslider_visible=False)
 
-        # Save chart as image for AI analysis
-        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmpfile:
-            fig.write_image(tmpfile.name)
-            tmpfile_path = tmpfile.name
-        with open(tmpfile_path, "rb") as f:
-            image_bytes = f.read()
-        os.remove(tmpfile_path)
-
         # AI prompt for stock analysis
         messages = [
             {"role": "system", "content": "You are an expert in technical stock analysis."},
@@ -125,8 +124,10 @@ if "stock_data" in st.session_state and st.session_state["stock_data"]:
             # Parse JSON output
             result = json.loads(result_text)
 
-        except requests.exceptions.RequestException as e:
-            result = {"action": "Error", "justification": f"API Request Error: {e}"}
+        except requests.exceptions.HTTPError as http_err:
+            result = {"action": "Error", "justification": f"HTTP Error: {http_err}"}
+        except requests.exceptions.RequestException as req_err:
+            result = {"action": "Error", "justification": f"API Request Error: {req_err}"}
         except json.JSONDecodeError:
             result = {"action": "Error", "justification": f"Could not parse AI response: {result_text}"}
 
