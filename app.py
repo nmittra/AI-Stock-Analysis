@@ -13,7 +13,7 @@ from openai import OpenAI  # Import DeepSeek (via OpenAI API)
 
 # Configure the DeepSeek API Key (Using Streamlit Secrets)
 DEEPSEEK_API_KEY = st.secrets["DEEPSEEK_API_KEY"]
-client = OpenAI(api_key=DEEPSEEK_API_KEY, base_url="https://api.deepseek.com")
+client = OpenAI(api_key=DEEPSEEK_API_KEY, base_url="https://openrouter.ai/api/v1")
 
 # Set up Streamlit app
 st.set_page_config(layout="wide")
