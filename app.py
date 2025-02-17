@@ -15,14 +15,8 @@ OPENROUTER_API_KEY = st.secrets["OPENROUTER_API_KEY"]
 # Initialize OpenRouter client
 client = OpenAI(
     api_key=OPENROUTER_API_KEY,
-    base_url="https://openrouter.ai/api/v1",
-    default_headers={
-        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-        "HTTP-Referer": "https://stock-shark.streamlit.app",
-        "X-Title": "Stock Shark"
-    }
+    base_url="https://openrouter.ai/api/v1"
 )
-
 
 # Set up Streamlit app
 st.set_page_config(layout="wide")
@@ -114,19 +108,17 @@ if "stock_data" in st.session_state and st.session_state["stock_data"]:
                     {"role": "system", "content": "You are a financial analyst."},
                     {"role": "user", "content": analysis_prompt},
                     {"role": "user", "content": chart_json}
-                ],
-                headers={
-                    "Authorization": f"Bearer {OPENROUTER_API_KEY}",  # ✅ Correctly pass API key
-                    "HTTP-Referer": "https://stock-shark.streamlit.app",  # ✅ Used for rankings
-                    "X-Title": "Stock Shark"  # ✅ Custom site title
-                }
+                ]
             )
 
-            # Extract JSON response
-            result_text = response.choices[0].message.content
-            json_start = result_text.find("{")
-            json_end = result_text.rfind("}") + 1
-            result = json.loads(result_text[json_start:json_end])
+            # Ensure response is valid before processing
+            if response and response.choices:
+                result_text = response.choices[0].message.content  # Extract response
+                json_start = result_text.find("{")
+                json_end = result_text.rfind("}") + 1
+                result = json.loads(result_text[json_start:json_end])
+            else:
+                result = {"action": "Error", "justification": "No valid response from OpenRouter"}
 
         except Exception as e:
             result = {"action": "Error", "justification": f"OpenRouter API error: {str(e)}"}
