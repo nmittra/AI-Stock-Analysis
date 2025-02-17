@@ -1,34 +1,20 @@
-print("Hello Papa!")
-
-# Move `st.set_page_config()` to the top before any other Streamlit commands
 import streamlit as st
-
-st.set_page_config(layout="wide")  # ✅ This must be the first Streamlit command
-
-# Libraries
 import yfinance as yf
 import pandas as pd
 import plotly.graph_objects as go
+import requests
 import json
+import tempfile
+import os
 from datetime import datetime, timedelta
-from openai import OpenAI  # Import OpenAI SDK for OpenRouter
 
-# Configure the OpenRouter API Key (Using Streamlit Secrets)
-if "OPENROUTER_API_KEY" not in st.secrets:
-    st.error("❌ ERROR: OpenRouter API Key is missing in Streamlit Secrets!")
-else:
-    st.success("✅ OpenRouter API Key loaded successfully.")
-
+# Load API key from Streamlit secrets
 OPENROUTER_API_KEY = st.secrets["OPENROUTER_API_KEY"]
-
-# Initialize OpenRouter client
-client = OpenAI(
-    base_url="https://openrouter.ai/api/v1",
-    api_key=OPENROUTER_API_KEY,
-    default_headers={"Authorization": f"Bearer {OPENROUTER_API_KEY}"},
-)
+OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
+MODEL_NAME = "deepseek-ai/deepseek-r1"
 
 # Set up Streamlit app
+st.set_page_config(layout="wide")
 st.title("AI-Powered Technical Stock Analysis Dashboard")
 st.sidebar.header("Configuration")
 
@@ -36,7 +22,7 @@ st.sidebar.header("Configuration")
 tickers_input = st.sidebar.text_input("Enter Stock Tickers (comma-separated):", "AAPL,MSFT,GOOG")
 tickers = [ticker.strip().upper() for ticker in tickers_input.split(",") if ticker.strip()]
 
-# Set the date range
+# Date selection
 end_date_default = datetime.today()
 start_date_default = end_date_default - timedelta(days=365)
 start_date = st.sidebar.date_input("Start Date", value=start_date_default)
@@ -50,7 +36,7 @@ indicators = st.sidebar.multiselect(
     default=["20-Day SMA"]
 )
 
-# Button to fetch stock data
+# Button to fetch data for all tickers
 if st.sidebar.button("Fetch Data"):
     stock_data = {}
     for ticker in tickers:
@@ -62,15 +48,20 @@ if st.sidebar.button("Fetch Data"):
     st.session_state["stock_data"] = stock_data
     st.success("Stock data loaded successfully for: " + ", ".join(stock_data.keys()))
 
-# Ensure data exists before analysis
+# Ensure data is loaded
 if "stock_data" in st.session_state and st.session_state["stock_data"]:
 
     def analyze_ticker(ticker, data):
-        # Build candlestick chart
+        """Analyzes a stock using OpenRouter AI."""
+        # Create candlestick chart
         fig = go.Figure(data=[
             go.Candlestick(
-                x=data.index, open=data['Open'], high=data['High'],
-                low=data['Low'], close=data['Close'], name="Candlestick"
+                x=data.index,
+                open=data['Open'],
+                high=data['High'],
+                low=data['Low'],
+                close=data['Close'],
+                name="Candlestick"
             )
         ])
 
@@ -95,50 +86,56 @@ if "stock_data" in st.session_state and st.session_state["stock_data"]:
 
         for ind in indicators:
             add_indicator(ind)
-
         fig.update_layout(xaxis_rangeslider_visible=False)
 
-        # Convert the chart to JSON (no image saving needed)
-        chart_json = fig.to_json()
+        # Save chart as image for AI analysis
+        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmpfile:
+            fig.write_image(tmpfile.name)
+            tmpfile_path = tmpfile.name
+        with open(tmpfile_path, "rb") as f:
+            image_bytes = f.read()
+        os.remove(tmpfile_path)
 
-        # AI Analysis using OpenRouter
-        analysis_prompt = (
-            f"Act as a financial analyst specializing in technical analysis of stocks, ETFs, and cryptocurrencies. "
-            f"Your expertise includes asset trends, momentum, volatility, and volume assessments. "
-            f"Analyze the stock chart for {ticker} based on candlestick patterns and indicators. "
-            f"Provide a recommendation: 'Strong Buy', 'Buy', 'Weak Buy', 'Hold', 'Weak Sell', 'Sell', or 'Strong Sell'. "
-            f"Return your response as a JSON object with 'action' and 'justification'."
-        )
+        # AI prompt for stock analysis
+        messages = [
+            {"role": "system", "content": "You are an expert in technical stock analysis."},
+            {"role": "user", "content": f"Analyze the stock chart for {ticker}. "
+             "Based on technical indicators and candlestick patterns, provide a recommendation: "
+             "'Strong Buy', 'Buy', 'Weak Buy', 'Hold', 'Weak Sell', 'Sell', or 'Strong Sell'. "
+             "Return your response in JSON format with keys: 'action' and 'justification'."}
+        ]
+
+        headers = {
+            "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+            "Content-Type": "application/json"
+        }
+
+        payload = {
+            "model": MODEL_NAME,
+            "messages": messages,
+            "temperature": 0.7
+        }
 
         try:
-            response = client.chat.completions.create(
-                model="openai/gpt-4o",
-                messages=[
-                    {"role": "system", "content": "You are a financial analyst."},
-                    {"role": "user", "content": analysis_prompt},
-                    {"role": "user", "content": chart_json}
-                ]
-            )
+            response = requests.post(OPENROUTER_API_URL, headers=headers, json=payload)
+            response.raise_for_status()
+            response_data = response.json()
+            result_text = response_data["choices"][0]["message"]["content"]
 
-            # Ensure response is valid before processing
-            if response and response.choices:
-                result_text = response.choices[0].message.content  # Extract response
-                json_start = result_text.find("{")
-                json_end = result_text.rfind("}") + 1
-                result = json.loads(result_text[json_start:json_end])
-            else:
-                result = {"action": "Error", "justification": "No valid response from OpenRouter"}
+            # Parse JSON output
+            result = json.loads(result_text)
 
-        except Exception as e:
-            result = {"action": "Error", "justification": f"OpenRouter API error: {str(e)}"}
+        except requests.exceptions.RequestException as e:
+            result = {"action": "Error", "justification": f"API Request Error: {e}"}
+        except json.JSONDecodeError:
+            result = {"action": "Error", "justification": f"Could not parse AI response: {result_text}"}
 
         return fig, result
 
-    # Create tabs for analysis
+    # Tabs: overall summary and individual tickers
     tab_names = ["Overall Summary"] + list(st.session_state["stock_data"].keys())
     tabs = st.tabs(tab_names)
 
-    # Store results
     overall_results = []
 
     for i, ticker in enumerate(st.session_state["stock_data"]):
@@ -152,7 +149,6 @@ if "stock_data" in st.session_state and st.session_state["stock_data"]:
             st.write("**Detailed Justification:**")
             st.write(result.get("justification", "No justification provided."))
 
-    # Display overall summary
     with tabs[0]:
         st.subheader("Overall Structured Recommendations")
         df_summary = pd.DataFrame(overall_results)
