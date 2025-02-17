@@ -10,12 +10,18 @@ from datetime import datetime, timedelta
 from openai import OpenAI  # Import OpenAI SDK for OpenRouter
 
 # Configure the OpenRouter API Key (Using Streamlit Secrets)
+if "OPENROUTER_API_KEY" not in st.secrets:
+    st.error("❌ ERROR: OpenRouter API Key is missing in Streamlit Secrets!")
+else:
+    st.success("✅ OpenRouter API Key loaded successfully.")
+
 OPENROUTER_API_KEY = st.secrets["OPENROUTER_API_KEY"]
 
 # Initialize OpenRouter client
 client = OpenAI(
+    base_url="https://openrouter.ai/api/v1",
     api_key=OPENROUTER_API_KEY,
-    base_url="https://openrouter.ai/api/v1"
+    default_headers={"Authorization": f"Bearer {OPENROUTER_API_KEY}"},
 )
 
 # Set up Streamlit app
