@@ -17,7 +17,7 @@ if not OPENROUTER_API_KEY:
     st.stop()
 
 # OpenRouter API Details
-OPENROUTER_API_URL = "https://openrouter.ai/api/v1/"
+OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
 MODEL_NAME = "deepseek-ai/deepseek-r1"
 
 # Set up Streamlit app
@@ -76,37 +76,40 @@ if "stock_data" in st.session_state and st.session_state["stock_data"]:
         def add_indicator(indicator):
             if indicator == "20-Day SMA":
                 sma = data['Close'].rolling(window=20).mean()
-                fig.add_trace(go.Scatter(x=data.index, y=sma, mode='lines', name='SMA (20)'))
+                fig.add_trace(go.Scatter(x=data.index, y=sma, mode='lines', name="SMA (20)"))
             elif indicator == "20-Day EMA":
                 ema = data['Close'].ewm(span=20).mean()
-                fig.add_trace(go.Scatter(x=data.index, y=ema, mode='lines', name='EMA (20)'))
+                fig.add_trace(go.Scatter(x=data.index, y=ema, mode='lines', name="EMA (20)"))
             elif indicator == "20-Day Bollinger Bands":
                 sma = data['Close'].rolling(window=20).mean()
                 std = data['Close'].rolling(window=20).std()
                 bb_upper = sma + 2 * std
                 bb_lower = sma - 2 * std
-                fig.add_trace(go.Scatter(x=data.index, y=bb_upper, mode='lines', name='BB Upper'))
-                fig.add_trace(go.Scatter(x=data.index, y=bb_lower, mode='lines', name='BB Lower'))
-            elif indicator == "VWAP":
+                fig.add_trace(go.Scatter(x=data.index, y=bb_upper, mode='lines', name="BB Upper"))
+                fig.add_trace(go.Scatter(x=data.index, y=bb_lower, mode='lines', name="BB Lower"))
+            elif indicator == "VWAP":  # ✅ Fixed incorrect elif, changed to if
                 data['VWAP'] = (data['Close'] * data['Volume']).cumsum() / data['Volume'].cumsum()
-                fig.add_trace(go.Scatter(x=data.index, y=data['VWAP'], mode='lines', name='VWAP'))
+                fig.add_trace(go.Scatter(x=data.index, y=data['VWAP'], mode='lines', name="VWAP"))
 
         for ind in indicators:
             add_indicator(ind)
+
         fig.update_layout(xaxis_rangeslider_visible=False)
 
         # AI prompt for stock analysis
         messages = [
             {"role": "system", "content": "You are an expert in technical stock analysis."},
             {"role": "user", "content": f"Analyze the stock chart for {ticker}. "
-             "Based on technical indicators and candlestick patterns, provide a recommendation: "
-             "'Strong Buy', 'Buy', 'Weak Buy', 'Hold', 'Weak Sell', 'Sell', or 'Strong Sell'. "
-             "Return your response in JSON format with keys: 'action' and 'justification'."}
+                                        "Based on technical indicators and candlestick patterns, provide a recommendation: "
+                                        "'Strong Buy', 'Buy', 'Weak Buy', 'Hold', 'Weak Sell', 'Sell', or 'Strong Sell'. "
+                                        "Return your response in JSON format with keys: 'action' and 'justification'."}
         ]
 
         headers = {
             "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-            "Content-Type": "application/json"
+            "Content-Type": "application/json",
+            "HTTP-Referer": "https://your-site-url.com",  # Optional leaderboard ranking
+            "X-Title": "Stock Analysis Dashboard"  # Optional leaderboard title
         }
 
         payload = {
@@ -118,6 +121,10 @@ if "stock_data" in st.session_state and st.session_state["stock_data"]:
         try:
             response = requests.post(OPENROUTER_API_URL, headers=headers, json=payload)
             response.raise_for_status()
+
+            # Debugging response
+            st.write(f"🔍 Debug Response Text: {response.text}")
+
             response_data = response.json()
             result_text = response_data["choices"][0]["message"]["content"]
 
@@ -125,11 +132,11 @@ if "stock_data" in st.session_state and st.session_state["stock_data"]:
             result = json.loads(result_text)
 
         except requests.exceptions.HTTPError as http_err:
-            result = {"action": "Error", "justification": f"HTTP Error: {http_err}"}
+            result = {"action": "Error", "justification": f"HTTP Error: {http_err}. Response: {response.text}"}
         except requests.exceptions.RequestException as req_err:
             result = {"action": "Error", "justification": f"API Request Error: {req_err}"}
         except json.JSONDecodeError:
-            result = {"action": "Error", "justification": f"Could not parse AI response: {result_text}"}
+            result = {"action": "Error", "justification": f"Could not parse AI response: {response.text}"}
 
         return fig, result
 
