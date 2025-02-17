@@ -9,12 +9,34 @@ import json
 import base64
 from datetime import datetime, timedelta
 
-# Configure the API key - IMPORTANT: Use Streamlit secrets or environment variables for security
-DEEPSEEK_API_KEY = st.secrets["DEEPSEEK_API_KEY"]
-
 # Set up Streamlit app
 st.set_page_config(layout="wide")
 st.title("AI-Powered Technical Stock Analysis Dashboard")
+
+# Configure the API key - Try multiple sources with fallbacks
+if 'DEEPSEEK_API_KEY' not in st.session_state:
+    # Method 1: Check Streamlit secrets
+    try:
+        st.session_state.DEEPSEEK_API_KEY = st.secrets["DEEPSEEK_API_KEY"]
+    except (KeyError, AttributeError):
+        # Method 2: Environment variable
+        st.session_state.DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY", "")
+
+    # Method 3: Manual input if not found
+    if not st.session_state.DEEPSEEK_API_KEY:
+        st.warning("⚠️ Deepseek API key not found in secrets or environment variables.")
+        st.session_state.DEEPSEEK_API_KEY = st.text_input(
+            "Enter your Deepseek API key:",
+            type="password",
+            help="Your API key will be stored in this session only and not saved permanently."
+        )
+
+# Check if API key is available
+api_key_available = bool(st.session_state.get("DEEPSEEK_API_KEY"))
+if not api_key_available:
+    st.error("Please provide a valid Deepseek API key to continue.")
+
+# Sidebar UI
 st.sidebar.header("Configuration")
 
 # Input for multiple stock tickers (comma-separated)
@@ -36,27 +58,17 @@ indicators = st.sidebar.multiselect(
     default=["20-Day SMA"]
 )
 
-# Button to fetch data for all tickers
-if st.sidebar.button("Fetch Data"):
-    stock_data = {}
-    for ticker in tickers:
-        # Download data for each ticker using yfinance
-        data = yf.download(ticker, start=start_date, end=end_date)
-        if not data.empty:
-            stock_data[ticker] = data
-        else:
-            st.warning(f"No data found for {ticker}.")
-    st.session_state["stock_data"] = stock_data
-    st.success("Stock data loaded successfully for: " + ", ".join(stock_data.keys()))
-
 
 # Function to call Deepseek R1 API
 def call_deepseek_r1(prompt, image_base64):
+    if not st.session_state.get("DEEPSEEK_API_KEY"):
+        return {"action": "Error", "justification": "No API key provided. Please enter your Deepseek API key."}
+
     api_url = "https://api.deepseek.com/v1/chat/completions"
 
     headers = {
         "Content-Type": "application/json",
-        "Authorization": f"Bearer {DEEPSEEK_API_KEY}"
+        "Authorization": f"Bearer {st.session_state.DEEPSEEK_API_KEY}"
     }
 
     # Prepare the messages with image
@@ -84,21 +96,45 @@ def call_deepseek_r1(prompt, image_base64):
     }
 
     try:
-        response = requests.post(api_url, json=payload, headers=headers)
-        response.raise_for_status()
-        result = response.json()
-        response_content = result["choices"][0]["message"]["content"]
-        return json.loads(response_content)
+        with st.spinner("Analyzing chart with Deepseek R1..."):
+            response = requests.post(api_url, json=payload, headers=headers)
+            response.raise_for_status()
+            result = response.json()
+            response_content = result["choices"][0]["message"]["content"]
+            return json.loads(response_content)
     except requests.exceptions.RequestException as e:
-        return {"action": "Error", "justification": f"API request error: {str(e)}"}
+        error_detail = str(e)
+        if response.status_code == 401:
+            error_detail = "Invalid API key or authorization failed. Please check your Deepseek API key."
+        elif response.status_code == 429:
+            error_detail = "API rate limit exceeded. Please try again later."
+        return {"action": "Error", "justification": f"API request error: {error_detail}"}
     except json.JSONDecodeError as e:
-        return {"action": "Error", "justification": f"JSON parsing error: {str(e)}"}
+        return {"action": "Error",
+                "justification": f"JSON parsing error: {str(e)}. Raw response: {response.text[:500]}"}
     except Exception as e:
         return {"action": "Error", "justification": f"General error: {str(e)}"}
 
 
+# Button to fetch data for all tickers
+if st.sidebar.button("Fetch Data") and tickers:
+    stock_data = {}
+    with st.spinner("Fetching stock data..."):
+        for ticker in tickers:
+            # Download data for each ticker using yfinance
+            data = yf.download(ticker, start=start_date, end=end_date)
+            if not data.empty:
+                stock_data[ticker] = data
+            else:
+                st.warning(f"No data found for {ticker}.")
+    if stock_data:
+        st.session_state["stock_data"] = stock_data
+        st.success("Stock data loaded successfully for: " + ", ".join(stock_data.keys()))
+    else:
+        st.error("No valid stock data found for any of the provided tickers.")
+
 # Ensure we have data to analyze
-if "stock_data" in st.session_state and st.session_state["stock_data"]:
+if "stock_data" in st.session_state and st.session_state["stock_data"] and api_key_available:
 
     # Define a function to build chart, call the Deepseek API and return structured result
     def analyze_ticker(ticker, data):
@@ -188,5 +224,7 @@ if "stock_data" in st.session_state and st.session_state["stock_data"]:
         st.subheader("Overall Structured Recommendations")
         df_summary = pd.DataFrame(overall_results)
         st.table(df_summary)
-else:
+elif not api_key_available and "stock_data" in st.session_state:
+    st.warning("Please provide a Deepseek API key to analyze the loaded stock data.")
+elif not "stock_data" in st.session_state:
     st.info("Please fetch stock data using the sidebar.")
