@@ -5,8 +5,6 @@ import streamlit as st
 import yfinance as yf
 import pandas as pd
 import plotly.graph_objects as go
-import tempfile
-import os
 import json
 from datetime import datetime, timedelta
 from openai import OpenAI  # Import OpenAI SDK for OpenRouter
@@ -14,10 +12,17 @@ from openai import OpenAI  # Import OpenAI SDK for OpenRouter
 # Configure the OpenRouter API Key (Using Streamlit Secrets)
 OPENROUTER_API_KEY = st.secrets["OPENROUTER_API_KEY"]
 
+# Initialize OpenRouter client
 client = OpenAI(
+    api_key=OPENROUTER_API_KEY,
     base_url="https://openrouter.ai/api/v1",
-    api_key=OPENROUTER_API_KEY
+    default_headers={
+        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+        "HTTP-Referer": "https://stock-shark.streamlit.app",
+        "X-Title": "Stock Shark"
+    }
 )
+
 
 # Set up Streamlit app
 st.set_page_config(layout="wide")
@@ -104,17 +109,17 @@ if "stock_data" in st.session_state and st.session_state["stock_data"]:
 
         try:
             response = client.chat.completions.create(
-                extra_headers={
-                    "HTTP-Referer": "https://nmittra-ai-stock-analysis.streamlit.app",  # Optional for OpenRouter rankings
-                    "X-Title": "AI Stock Analysis Dashboard"  # Optional title
-                },
                 model="openai/gpt-4o",
                 messages=[
                     {"role": "system", "content": "You are a financial analyst."},
                     {"role": "user", "content": analysis_prompt},
                     {"role": "user", "content": chart_json}
                 ],
-                stream=False
+                headers={
+                    "Authorization": f"Bearer {OPENROUTER_API_KEY}",  # ✅ Correctly pass API key
+                    "HTTP-Referer": "https://stock-shark.streamlit.app",  # ✅ Used for rankings
+                    "X-Title": "Stock Shark"  # ✅ Custom site title
+                }
             )
 
             # Extract JSON response
