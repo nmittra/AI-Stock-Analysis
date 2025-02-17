@@ -139,20 +139,23 @@ def call_deepseek_r1(prompt, image_base64):
                         del st.session_state["DEEPSEEK_API_KEY"]
                     error_message = "Invalid API key. Please reload the page and re-enter your Deepseek API key."
 
+                # Add debugging information
+                st.error(f"Debug Info: {error_message}")
+                st.json(payload)  # Display the payload for debugging
                 return {"action": "Error", "justification": error_message}
 
             result = response.json()
             response_content = result["choices"][0]["message"]["content"]
             return json.loads(response_content)
     except requests.exceptions.RequestException as e:
+        st.error(f"API request error: {str(e)}")
         return {"action": "Error", "justification": f"API request error: {str(e)}"}
     except json.JSONDecodeError as e:
-        return {"action": "Error",
-                "justification": f"JSON parsing error: {str(e)}. Raw response: {response.text[:500]}"}
+        st.error(f"JSON parsing error: {str(e)}. Raw response: {response.text[:500]}")
+        return {"action": "Error", "justification": f"JSON parsing error: {str(e)}. Raw response: {response.text[:500]}"}
     except Exception as e:
+        st.error(f"General error: {str(e)}")
         return {"action": "Error", "justification": f"General error: {str(e)}"}
-
-
 # Button to fetch data for all tickers
 fetch_data = st.sidebar.button("Fetch Data")
 if fetch_data and tickers:
