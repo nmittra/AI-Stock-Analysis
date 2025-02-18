@@ -56,7 +56,8 @@ if st.sidebar.button("Fetch Data"):
     for ticker in tickers:
         try:
             st.write(f"Attempting to fetch data for {ticker}...")
-            data, _ = ts.get_daily(symbol=ticker, outputsize='full')
+            data, meta_data = ts.get_daily(symbol=ticker, outputsize='full')
+            st.write(f"Meta data: {meta_data}")  # Add this line
             data = data.loc[start_date:end_date]
             data = data.rename(columns={
                 '1. open': 'Open',
