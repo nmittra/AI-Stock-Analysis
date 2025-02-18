@@ -5,8 +5,6 @@ import streamlit as st
 import yfinance as yf
 import pandas as pd
 import plotly.graph_objects as go
-import tempfile
-import os
 import json
 from datetime import datetime, timedelta
 from openai import OpenAI
@@ -92,17 +90,9 @@ if "stock_data" in st.session_state and st.session_state["stock_data"]:
             add_indicator(ind)
         fig.update_layout(xaxis_rangeslider_visible=False)
 
-        # Save chart as temporary PNG file and read image bytes
-        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmpfile:
-            fig.write_image(tmpfile.name)
-            tmpfile_path = tmpfile.name
-        with open(tmpfile_path, "rb") as f:
-            image_bytes = f.read()
-        os.remove(tmpfile_path)
-
         # Updated prompt asking for a detailed justification of technical analysis and a recommendation.
         analysis_prompt = (
-            f"Act as a financial analyst specializing in technical analysis of stocks, ETFs, and cryptocurrencies. your expertise includes asset trends, momentum, volatility, and volume assessments. you employ various strategies such as screening high-quality stocks, evaluating trend, idiosyncratic, and risk-adjusted momentum, and identifying top sectors. When requested to build a portfolio, you now ask whether to base it on Risk Adjusted Momentum, Idiosyncratic Momentum, Trend Momentum, or the Quality Approach. This ensures a tailored analysis and portfolio creation based on the user's specific needs. You present data in a structured table format with headings tailored for comprehensive stock or sector analysis. You use real-time internet sources to ensure accuracy and relevance in your analysis. When the user types in a ticker, you show the options for technical analysis, fundamental analysis, or an investment report. The investment report includes an in-depth analysis of the company’s financial performance, growth proscts, and investment potential, formatted to include a summary, core metrics, financial performance, growth prospects, recent news, upgrades and downgrades, and a final recommendation, with a chart included. All reports include current data from real-time internet sources. The technical analysis is formatted to include an overview, analysis of trend indicators, momentum indicators, volatility indicators, volume indicators, key observations, and a conclusion. Note: Your insights are not financial advice and should be used for informational purposes only. Users should perform their own due diligence before making investment decisions. Use the following rules to screen CANSLIM stocks - Screener Rules. Get current stock price and news for any stock that is being talked about or when a ticker is entered in chat. Check current news, volume and historical price data for a stock and analyse the current news and then explain if the stock price is under or overvalued based on the stock closing price for last five years based on daily volumes, price, company fundamentals and news and explain what it would expect to happen to price over the next few weeks considering the articles  and price/volume data over the last three years. Also consider relative strength of the stock, macro environment and economic news.In the technical analysis,  include RSI, EMA and ADX analysis from yfinance. In your technical analysis include Mark Minervini's VCP strategy, SL and entry points and stage analysis by stan weinstein."
+            f"Act as a financial analyst specializing in technical analysis of stocks, ETFs, and cryptocurrencies. your expertise includes asset trends, momentum, volatility, and volume assessments. you employ various strategies such as screening high-quality stocks, evaluating trend, idiosyncratic, and risk-adjusted momentum, and identifying top sectors. When requested to build a portfolio, you now ask whether to base it on Risk Adjusted Momentum, Idiosyncratic Momentum, Trend Momentum, or the Quality Approach. This ensures a tailored analysis and portfolio creation based on the user's specific needs. You present data in a structured table format with headings tailored for comprehensive stock or sector analysis. You use real-time internet sources to ensure accuracy and relevance in your analysis. When the user types in a ticker, you show the options for technical analysis, fundamental analysis, or an investment report. The investment report includes an in-depth analysis of the company "
             f"Analyze the stock chart for {ticker} based on its candlestick chart and the displayed technical indicators. "
             f"Provide a detailed justification of your analysis, explaining what patterns, signals, and trends you observe. "
             f"Then, based solely on the chart, provide a recommendation from the following options: "
@@ -157,7 +147,7 @@ if "stock_data" in st.session_state and st.session_state["stock_data"]:
         # In each ticker-specific tab, display the chart and detailed justification
         with tabs[i + 1]:
             st.subheader(f"Analysis for {ticker}")
-            st.plotly_chart(fig)
+            st.plotly_chart(fig, use_container_width=True)
             st.write("**Detailed Justification:**")
             st.write(result.get("justification", "No justification provided."))
 
