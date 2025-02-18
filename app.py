@@ -11,6 +11,7 @@ import google.generativeai as genai
 import tempfile
 import os
 from alpha_vantage.timeseries import TimeSeries
+import datetime
 
 # Configure API keys - IMPORTANT: Use Streamlit secrets for security
 DEEPSEEK_API_KEY = st.secrets["DEEPSEEK_API_KEY"]
@@ -41,6 +42,12 @@ start_date_default = end_date_default - timedelta(days=365)
 start_date = st.sidebar.date_input("Start Date", value=start_date_default)
 end_date = st.sidebar.date_input("End Date", value=end_date_default)
 
+
+current_date = datetime.datetime.now().date()
+st.write(f"Current date: {current_date}")
+st.write(f"Selected date range: {start_date} to {end_date}")
+
+
 # Technical indicators selection (applied to every ticker)
 st.sidebar.subheader("Technical Indicators")
 indicators = st.sidebar.multiselect(
@@ -57,8 +64,6 @@ if st.sidebar.button("Fetch Data"):
         try:
             st.write(f"Attempting to fetch data for {ticker}...")
             data, meta_data = ts.get_daily(symbol=ticker, outputsize='full')
-            st.write(f"Meta data: {meta_data}")  # Add this line
-            data = data.loc[start_date:end_date]
             data = data.rename(columns={
                 '1. open': 'Open',
                 '2. high': 'High',
@@ -66,16 +71,22 @@ if st.sidebar.button("Fetch Data"):
                 '4. close': 'Close',
                 '5. volume': 'Volume'
             })
+            st.write(f"Raw API response for {ticker}:")
+            st.write(data)
+            st.write(meta_data)
             st.write(f"Raw data for {ticker}:", data)
+            st.write(f"Data range: {data.index.min()} to {data.index.max()}")
             if not data.empty:
                 stock_data[ticker] = data
                 st.success(f"Data fetched successfully for {ticker}")
             else:
                 st.warning(f"No data found for {ticker}.")
+        except ValueError as ve:
+            st.error(f"ValueError for {ticker}: {ve}")
+        except KeyError as ke:
+            st.error(f"KeyError for {ticker}: {ke}")
         except Exception as e:
-            st.error(f"Error fetching data for {ticker}: {str(e)}")
-            st.write(f"Error type: {type(e).__name__}")
-            st.write(f"Error details: {e}")
+            st.error(f"Unexpected error for {ticker}: {e}")
 
     if stock_data:
         st.session_state["stock_data"] = stock_data
