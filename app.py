@@ -11,7 +11,6 @@ import google.generativeai as genai
 import tempfile
 import os
 from alpha_vantage.timeseries import TimeSeries
-import datetime
 
 # Configure API keys - IMPORTANT: Use Streamlit secrets for security
 DEEPSEEK_API_KEY = st.secrets["DEEPSEEK_API_KEY"]
@@ -37,16 +36,15 @@ tickers_input = st.sidebar.text_input("Enter Stock Tickers (comma-separated):", 
 tickers = [ticker.strip().upper() for ticker in tickers_input.split(",") if ticker.strip()]
 
 # Set the date range: start date = one year before today, end date = today
-end_date_default = datetime.today()
+end_date_default = datetime.now().date()
 start_date_default = end_date_default - timedelta(days=365)
 start_date = st.sidebar.date_input("Start Date", value=start_date_default)
 end_date = st.sidebar.date_input("End Date", value=end_date_default)
 
-
-current_date = datetime.datetime.now().date()
+# Display current date and selected date range
+current_date = datetime.now().date()
 st.write(f"Current date: {current_date}")
 st.write(f"Selected date range: {start_date} to {end_date}")
-
 
 # Technical indicators selection (applied to every ticker)
 st.sidebar.subheader("Technical Indicators")
@@ -76,11 +74,15 @@ if st.sidebar.button("Fetch Data"):
             st.write(meta_data)
             st.write(f"Raw data for {ticker}:", data)
             st.write(f"Data range: {data.index.min()} to {data.index.max()}")
+
+            # Filter data based on selected date range
+            data = data.loc[start_date:end_date]
+
             if not data.empty:
                 stock_data[ticker] = data
                 st.success(f"Data fetched successfully for {ticker}")
             else:
-                st.warning(f"No data found for {ticker}.")
+                st.warning(f"No data found for {ticker} in the selected date range.")
         except ValueError as ve:
             st.error(f"ValueError for {ticker}: {ve}")
         except KeyError as ke:
@@ -205,6 +207,7 @@ if "stock_data" in st.session_state and st.session_state["stock_data"]:
 
         return fig, result
 
+
     # Create tabs: first tab for overall summary, subsequent tabs per ticker
     tab_names = ["Overall Summary"] + list(st.session_state["stock_data"].keys())
     tabs = st.tabs(tab_names)
@@ -212,6 +215,7 @@ if "stock_data" in st.session_state and st.session_state["stock_data"]:
     # List to store overall results
     overall_results = []
 
+    # Process each ticker and populate results
     # Process each ticker and populate results
     for i, ticker in enumerate(st.session_state["stock_data"]):
         data = st.session_state["stock_data"][ticker]
@@ -228,15 +232,29 @@ if "stock_data" in st.session_state and st.session_state["stock_data"]:
         except Exception as e:
             st.error(f"Error analyzing {ticker}: {str(e)}")
 
-    # In the Overall Summary tab, display a table of all results
+    # Display overall summary in the first tab
+    # Display overall summary in the first tab
     with tabs[0]:
-        st.subheader("Overall Structured Recommendations")
-        df_summary = pd.DataFrame(overall_results)
-        st.table(df_summary)
-else:
-    st.info("Please fetch stock data using the sidebar.")
+        # Create a DataFrame from overall_results
+        summary_df = pd.DataFrame(overall_results)
 
-# Add this at the end of your script to display API keys (for debugging only, remove in production)
-st.sidebar.write("DeepSeek API Key:", DEEPSEEK_API_KEY[:5] + "..." if DEEPSEEK_API_KEY else "Not set")
-st.sidebar.write("Google API Key:", GOOGLE_API_KEY[:5] + "..." if GOOGLE_API_KEY else "Not set")
-st.sidebar.write("Alpha Vantage API Key:", ALPHA_VANTAGE_API_KEY[:5] + "..." if ALPHA_VANTAGE_API_KEY else "Not set")
+        # Calculate and display the distribution of recommendations
+        recommendation_counts = summary_df['Recommendation'].value_counts()
+        fig_summary = go.Figure(data=[go.Bar(x=recommendation_counts.index, y=recommendation_counts.values)])
+        fig_summary.update_layout(title="Distribution of Recommendations", xaxis_title="Recommendation",
+                                  yaxis_title="Count")
+        st.plotly_chart(fig_summary, use_container_width=True)
+
+        # Display any additional overall insights or summaries here
+        st.write("This summary provides an overview of the recommendations for all analyzed stocks. "
+                 "Please refer to individual stock tabs for detailed analysis and justifications.")
+
+    # Add some instructions for the user
+    st.sidebar.markdown("---")
+    st.sidebar.write("Instructions:")
+    st.sidebar.write("1. Enter stock tickers separated by commas")
+    st.sidebar.write("2. Select a date range")
+    st.sidebar.write("3. Choose technical indicators")
+    st.sidebar.write("4. Select an AI model for analysis")
+    st.sidebar.write("5. Click 'Fetch Data' to update the analysis")
+
