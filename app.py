@@ -2,7 +2,6 @@ print("Hello Papa!")
 
 # Libraries
 import streamlit as st
-import yfinance as yf
 import pandas as pd
 import plotly.graph_objects as go
 import json
@@ -11,10 +10,12 @@ from openai import OpenAI
 import google.generativeai as genai
 import tempfile
 import os
+from alpha_vantage.timeseries import TimeSeries
 
-# Configure API keys - IMPORTANT: Use Streamlit secrets or environment variables for security
+# Configure API keys - IMPORTANT: Use Streamlit secrets for security
 DEEPSEEK_API_KEY = st.secrets["DEEPSEEK_API_KEY"]
 GOOGLE_API_KEY = st.secrets["GOOGLE_API_KEY"]
+ALPHA_VANTAGE_API_KEY = st.secrets["ALPHA_VANTAGE_API_KEY"]
 
 # Initialize API clients
 deepseek_client = OpenAI(api_key=DEEPSEEK_API_KEY, base_url="https://api.deepseek.com")
@@ -51,10 +52,20 @@ indicators = st.sidebar.multiselect(
 # Button to fetch data for all tickers
 if st.sidebar.button("Fetch Data"):
     stock_data = {}
+    ts = TimeSeries(key=ALPHA_VANTAGE_API_KEY, output_format='pandas')
     for ticker in tickers:
-        # Download data for each ticker using yfinance
         try:
-            data = yf.download(ticker, start=start_date, end=end_date)
+            st.write(f"Attempting to fetch data for {ticker}...")
+            data, _ = ts.get_daily(symbol=ticker, outputsize='full')
+            data = data.loc[start_date:end_date]
+            data = data.rename(columns={
+                '1. open': 'Open',
+                '2. high': 'High',
+                '3. low': 'Low',
+                '4. close': 'Close',
+                '5. volume': 'Volume'
+            })
+            st.write(f"Raw data for {ticker}:", data)
             if not data.empty:
                 stock_data[ticker] = data
                 st.success(f"Data fetched successfully for {ticker}")
@@ -62,6 +73,8 @@ if st.sidebar.button("Fetch Data"):
                 st.warning(f"No data found for {ticker}.")
         except Exception as e:
             st.error(f"Error fetching data for {ticker}: {str(e)}")
+            st.write(f"Error type: {type(e).__name__}")
+            st.write(f"Error details: {e}")
 
     if stock_data:
         st.session_state["stock_data"] = stock_data
@@ -180,7 +193,6 @@ if "stock_data" in st.session_state and st.session_state["stock_data"]:
 
         return fig, result
 
-
     # Create tabs: first tab for overall summary, subsequent tabs per ticker
     tab_names = ["Overall Summary"] + list(st.session_state["stock_data"].keys())
     tabs = st.tabs(tab_names)
@@ -215,3 +227,4 @@ else:
 # Add this at the end of your script to display API keys (for debugging only, remove in production)
 st.sidebar.write("DeepSeek API Key:", DEEPSEEK_API_KEY[:5] + "..." if DEEPSEEK_API_KEY else "Not set")
 st.sidebar.write("Google API Key:", GOOGLE_API_KEY[:5] + "..." if GOOGLE_API_KEY else "Not set")
+st.sidebar.write("Alpha Vantage API Key:", ALPHA_VANTAGE_API_KEY[:5] + "..." if ALPHA_VANTAGE_API_KEY else "Not set")

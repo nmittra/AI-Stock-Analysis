@@ -5,3 +5,4 @@ plotly
 google-generativeai
 kaleido
 openai
+alpha_vantage
