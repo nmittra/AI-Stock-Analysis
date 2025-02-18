@@ -112,9 +112,9 @@ if "stock_data" in st.session_state and st.session_state["stock_data"]:
 
         # Call the Deepseek API
         response = client.chat.completions.create(
-            model="deepseek-chat",
+            model="deepseek-reasoner",
             messages=[
-                {"role": "system", "content": "You are a helpful assistant specializing in stock analysis."},
+                {"role": "system", "content": analysis_prompt},
                 {"role": "user", "content": analysis_prompt}
             ],
             stream=False
