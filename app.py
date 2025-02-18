@@ -8,16 +8,26 @@ import plotly.graph_objects as go
 import json
 from datetime import datetime, timedelta
 from openai import OpenAI
+import google.generativeai as genai
+import tempfile
+import os
 
-# Configure the API key - IMPORTANT: Use Streamlit secrets or environment variables for security
-# For now, using hardcoded API key - REPLACE WITH YOUR ACTUAL API KEY SECURELY
+# Configure API keys - IMPORTANT: Use Streamlit secrets or environment variables for security
 DEEPSEEK_API_KEY = st.secrets["DEEPSEEK_API_KEY"]
-client = OpenAI(api_key=DEEPSEEK_API_KEY, base_url="https://api.deepseek.com")
+GOOGLE_API_KEY = st.secrets["GOOGLE_API_KEY"]
+
+# Initialize API clients
+deepseek_client = OpenAI(api_key=DEEPSEEK_API_KEY, base_url="https://api.deepseek.com")
+genai.configure(api_key=GOOGLE_API_KEY)
+gen_model = genai.GenerativeModel('gemini-2.0-flash')  # or other model
 
 # Set up Streamlit app
 st.set_page_config(layout="wide")
 st.title("AI-Powered Technical Stock Analysis Dashboard")
 st.sidebar.header("Configuration")
+
+# API selection
+api_choice = st.sidebar.radio("Choose API", ["DeepSeek", "Gemini"])
 
 # Input for multiple stock tickers (comma-separated)
 tickers_input = st.sidebar.text_input("Enter Stock Tickers (comma-separated):", "AAPL,MSFT,GOOG")
@@ -54,8 +64,8 @@ if st.sidebar.button("Fetch Data"):
 # Ensure we have data to analyze
 if "stock_data" in st.session_state and st.session_state["stock_data"]:
 
-    # Define a function to build chart, call the Deepseek API and return structured result
-    def analyze_ticker(ticker, data):
+    # Define a function to build chart, call the selected API and return structured result
+    def analyze_ticker(ticker, data, api_choice):
         # Build candlestick chart for the given ticker's data
         fig = go.Figure(data=[
             go.Candlestick(
@@ -90,30 +100,60 @@ if "stock_data" in st.session_state and st.session_state["stock_data"]:
             add_indicator(ind)
         fig.update_layout(xaxis_rangeslider_visible=False)
 
-        # Updated prompt asking for a detailed justification of technical analysis and a recommendation.
-        analysis_prompt = (
-            f"Act as a financial analyst specializing in technical analysis of stocks, ETFs, and cryptocurrencies. your expertise includes asset trends, momentum, volatility, and volume assessments. you employ various strategies such as screening high-quality stocks, evaluating trend, idiosyncratic, and risk-adjusted momentum, and identifying top sectors. When requested to build a portfolio, you now ask whether to base it on Risk Adjusted Momentum, Idiosyncratic Momentum, Trend Momentum, or the Quality Approach. This ensures a tailored analysis and portfolio creation based on the user's specific needs. You present data in a structured table format with headings tailored for comprehensive stock or sector analysis. You use real-time internet sources to ensure accuracy and relevance in your analysis. When the user types in a ticker, you show the options for technical analysis, fundamental analysis, or an investment report. The investment report includes an in-depth analysis of the company "
-            f"Analyze the stock chart for {ticker} based on its candlestick chart and the displayed technical indicators. "
-            f"Provide a detailed justification of your analysis, explaining what patterns, signals, and trends you observe. "
-            f"Then, based solely on the chart, provide a recommendation from the following options: "
-            f"'Strong Buy', 'Buy', 'Weak Buy', 'Hold', 'Weak Sell', 'Sell', or 'Strong Sell'. "
-            f"Return your output as a JSON object with two keys: 'action' and 'justification'."
-        )
+        if api_choice == "DeepSeek":
+            # DeepSeek API call
+            analysis_prompt = (
+                f"Act as a financial analyst specializing in technical analysis of stocks, ETFs, and cryptocurrencies. "
+                f"Your expertise includes asset trends, momentum, volatility, and volume assessments. "
+                f"You employ various strategies such as screening high-quality stocks, evaluating trend, idiosyncratic, and risk-adjusted momentum, and identifying top sectors. "
+                f"Analyze the stock chart for {ticker} based on its candlestick chart and the displayed technical indicators. "
+                f"Provide a detailed justification of your analysis, explaining what patterns, signals, and trends you observe. "
+                f"Then, based solely on the chart, provide a recommendation from the following options: "
+                f"'Strong Buy', 'Buy', 'Weak Buy', 'Hold', 'Weak Sell', 'Sell', or 'Strong Sell'. "
+                f"Return your output as a JSON object with two keys: 'action' and 'justification'."
+            )
+            response = deepseek_client.chat.completions.create(
+                model="deepseek-reasoner",
+                messages=[
+                    {"role": "system", "content": analysis_prompt},
+                    {"role": "user", "content": analysis_prompt}
+                ],
+                stream=False
+            )
+            result_text = response.choices[0].message.content
+        else:  # Gemini API
+            # Save chart as temporary PNG file and read image bytes
+            with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmpfile:
+                fig.write_image(tmpfile.name)
+                tmpfile_path = tmpfile.name
+            with open(tmpfile_path, "rb") as f:
+                image_bytes = f.read()
+            os.remove(tmpfile_path)
 
-        # Call the Deepseek API
-        response = client.chat.completions.create(
-            model="deepseek-reasoner",
-            messages=[
-                {"role": "system", "content": analysis_prompt},
-                {"role": "user", "content": analysis_prompt}
-            ],
-            stream=False
-        )
+            image_part = {
+                "data": image_bytes,
+                "mime_type": "image/png"
+            }
+
+            analysis_prompt = (
+                f"You are a Stock Trader specializing in Technical Analysis at a top financial institution. "
+                f"Analyze the stock chart for {ticker} based on its candlestick chart and the displayed technical indicators. "
+                f"Provide a detailed justification of your analysis, explaining what patterns, signals, and trends you observe. "
+                f"Then, based solely on the chart, provide a recommendation from the following options: "
+                f"'Strong Buy', 'Buy', 'Weak Buy', 'Hold', 'Weak Sell', 'Sell', or 'Strong Sell'. "
+                f"Return your output as a JSON object with two keys: 'action' and 'justification'."
+            )
+
+            contents = [
+                {"role": "user", "parts": [analysis_prompt]},
+                {"role": "user", "parts": [image_part]}
+            ]
+
+            response = gen_model.generate_content(contents=contents)
+            result_text = response.text
 
         try:
             # Attempt to parse JSON from the response text
-            result_text = response.choices[0].message.content
-            # Find the start and end of the JSON object within the text (if Deepseek includes extra text)
             json_start_index = result_text.find('{')
             json_end_index = result_text.rfind('}') + 1  # +1 to include the closing brace
             if json_start_index != -1 and json_end_index > json_start_index:
@@ -142,7 +182,7 @@ if "stock_data" in st.session_state and st.session_state["stock_data"]:
     for i, ticker in enumerate(st.session_state["stock_data"]):
         data = st.session_state["stock_data"][ticker]
         # Analyze ticker: get chart figure and structured output result
-        fig, result = analyze_ticker(ticker, data)
+        fig, result = analyze_ticker(ticker, data, api_choice)
         overall_results.append({"Stock": ticker, "Recommendation": result.get("action", "N/A")})
         # In each ticker-specific tab, display the chart and detailed justification
         with tabs[i + 1]:
