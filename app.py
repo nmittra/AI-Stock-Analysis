@@ -53,13 +53,21 @@ if st.sidebar.button("Fetch Data"):
     stock_data = {}
     for ticker in tickers:
         # Download data for each ticker using yfinance
-        data = yf.download(ticker, start=start_date, end=end_date)
-        if not data.empty:
-            stock_data[ticker] = data
-        else:
-            st.warning(f"No data found for {ticker}.")
-    st.session_state["stock_data"] = stock_data
-    st.success("Stock data loaded successfully for: " + ", ".join(stock_data.keys()))
+        try:
+            data = yf.download(ticker, start=start_date, end=end_date)
+            if not data.empty:
+                stock_data[ticker] = data
+                st.success(f"Data fetched successfully for {ticker}")
+            else:
+                st.warning(f"No data found for {ticker}.")
+        except Exception as e:
+            st.error(f"Error fetching data for {ticker}: {str(e)}")
+
+    if stock_data:
+        st.session_state["stock_data"] = stock_data
+        st.success("Stock data loaded successfully for: " + ", ".join(stock_data.keys()))
+    else:
+        st.error("No data was fetched for any ticker. Please check your inputs and try again.")
 
 # Ensure we have data to analyze
 if "stock_data" in st.session_state and st.session_state["stock_data"]:
@@ -96,6 +104,7 @@ if "stock_data" in st.session_state and st.session_state["stock_data"]:
             elif indicator == "VWAP":
                 data['VWAP'] = (data['Close'] * data['Volume']).cumsum() / data['Volume'].cumsum()
                 fig.add_trace(go.Scatter(x=data.index, y=data['VWAP'], mode='lines', name='VWAP'))
+
         for ind in indicators:
             add_indicator(ind)
         fig.update_layout(xaxis_rangeslider_visible=False)
@@ -171,6 +180,7 @@ if "stock_data" in st.session_state and st.session_state["stock_data"]:
 
         return fig, result
 
+
     # Create tabs: first tab for overall summary, subsequent tabs per ticker
     tab_names = ["Overall Summary"] + list(st.session_state["stock_data"].keys())
     tabs = st.tabs(tab_names)
@@ -181,15 +191,18 @@ if "stock_data" in st.session_state and st.session_state["stock_data"]:
     # Process each ticker and populate results
     for i, ticker in enumerate(st.session_state["stock_data"]):
         data = st.session_state["stock_data"][ticker]
-        # Analyze ticker: get chart figure and structured output result
-        fig, result = analyze_ticker(ticker, data, api_choice)
-        overall_results.append({"Stock": ticker, "Recommendation": result.get("action", "N/A")})
-        # In each ticker-specific tab, display the chart and detailed justification
-        with tabs[i + 1]:
-            st.subheader(f"Analysis for {ticker}")
-            st.plotly_chart(fig, use_container_width=True)
-            st.write("**Detailed Justification:**")
-            st.write(result.get("justification", "No justification provided."))
+        try:
+            # Analyze ticker: get chart figure and structured output result
+            fig, result = analyze_ticker(ticker, data, api_choice)
+            overall_results.append({"Stock": ticker, "Recommendation": result.get("action", "N/A")})
+            # In each ticker-specific tab, display the chart and detailed justification
+            with tabs[i + 1]:
+                st.subheader(f"Analysis for {ticker}")
+                st.plotly_chart(fig, use_container_width=True)
+                st.write("**Detailed Justification:**")
+                st.write(result.get("justification", "No justification provided."))
+        except Exception as e:
+            st.error(f"Error analyzing {ticker}: {str(e)}")
 
     # In the Overall Summary tab, display a table of all results
     with tabs[0]:
@@ -198,3 +211,7 @@ if "stock_data" in st.session_state and st.session_state["stock_data"]:
         st.table(df_summary)
 else:
     st.info("Please fetch stock data using the sidebar.")
+
+# Add this at the end of your script to display API keys (for debugging only, remove in production)
+st.sidebar.write("DeepSeek API Key:", DEEPSEEK_API_KEY[:5] + "..." if DEEPSEEK_API_KEY else "Not set")
+st.sidebar.write("Google API Key:", GOOGLE_API_KEY[:5] + "..." if GOOGLE_API_KEY else "Not set")
