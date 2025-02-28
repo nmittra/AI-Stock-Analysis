@@ -6,3 +6,9 @@ google-generativeai
 kaleido
 openai
 alpha_vantage
+tiingo
+torch
+transformers
+finnhub-python
+sentencepiece
+accelerate
